@@ -1,0 +1,111 @@
+-- Hood Custom -- 
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local LocalPlayer = Players.LocalPlayer
+local enabled = false
+local Plr, ClosestPart
+
+getgenv().Corruption = {
+    Settings = {
+        Prediction = 0.04,
+        AimPart = "Head",
+        Misc = {
+            ForceHit = true
+        }
+    }
+}
+
+-- Find nearest enemy
+local function findNearestEnemy()
+    local closestDistance = math.huge
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
+            local part = player.Character:FindFirstChild(getgenv().Corruption.Settings.AimPart)
+            if part then
+                local dist = (LocalPlayer.Character.HumanoidRootPart.Position - part.Position).Magnitude
+                if dist < closestDistance then
+                    closestDistance = dist
+                    Plr = player
+                    ClosestPart = part
+                end
+            end
+        end
+    end
+end
+
+-- Highlight target
+local function highlight(plr)
+    for _, player in pairs(Players:GetPlayers()) do
+        if player.Character then
+            for _, obj in pairs(player.Character:GetChildren()) do
+                if obj:IsA("Highlight") then obj:Destroy() end
+            end
+        end
+    end
+    if plr and plr.Character then
+        local h = Instance.new("Highlight")
+        h.Parent = plr.Character
+        h.FillColor = Color3.fromRGB(105, 128, 255)
+        h.OutlineColor = Color3.fromRGB(8, 8, 8)
+        h.FillTransparency = 0.6
+        h.OutlineTransparency = 0
+    end
+end
+
+-- Hook mouse prediction
+local mt = getrawmetatable(game)
+local old = mt.__index
+setreadonly(mt, false)
+
+mt.__index = newcclosure(function(self, key)
+    if not checkcaller() and enabled and typeof(self) == "Instance" and self:IsA("Mouse") and key == "Hit" then
+        if Plr and Plr.Character and Plr.Character:FindFirstChild(getgenv().Corruption.Settings.AimPart) then
+            local target = Plr.Character[getgenv().Corruption.Settings.AimPart]
+            return CFrame.new(target.Position + target.Velocity * getgenv().Corruption.Settings.Prediction)
+        end
+    end
+    return old(self, key)
+end)
+
+-- Run constantly
+RunService.Heartbeat:Connect(function()
+    if enabled then
+        findNearestEnemy()
+        if Plr then
+            if highlightsEnabled then
+                highlight(Plr)
+            end
+
+            if getgenv().Corruption.Settings.Misc.ForceHit and ClosestPart then
+                local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if not hrp then return end
+
+                local shootPos = hrp.Position + hrp.CFrame.LookVector * 10
+                local args = {
+                    [1] = "Shoot",
+                    [2] = {
+                        [1] = {
+                            [1] = {
+                                ["Instance"] = ClosestPart,
+                                ["Normal"] = hrp.CFrame.LookVector,
+                                ["Position"] = hrp.Position
+                            }
+                        },
+                        [2] = {
+                            [1] = {
+                                ["thePart"] = ClosestPart,
+                                ["theOffset"] = CFrame.new(hrp.CFrame.LookVector * 0.5)
+                            }
+                        },
+                        [3] = shootPos,
+                        [4] = hrp.Position,
+                        [5] = tick()
+                    }
+                }
+                ReplicatedStorage.MainEvent:FireServer(unpack(args))
+            end
+        end
+    end
+end)
